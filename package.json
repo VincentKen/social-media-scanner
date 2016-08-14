@@ -23,8 +23,6 @@
   },
   "homepage": "https://github.com/VincentKen/social-media-scanner#readme",
   "dependencies": {
-    "cheerio": "^0.20.0",
-    "jsdom": "^9.4.2",
-    "request": "^2.74.0"
+    "jsdom": "^9.4.2"
   }
 }
