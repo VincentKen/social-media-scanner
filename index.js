@@ -236,7 +236,7 @@ function Scanner (url) {
    * @return {void}
    */
   var scan = function (url, callback) {
-    console.log(url);
+
     jsdom.env({
       url: url,
       scripts: ["http://code.jquery.com/jquery.js"],
@@ -314,22 +314,20 @@ function Scanner (url) {
   };
 }
 
+/**
+* Create a scanner
+* @param  {string} url The starting URL of the website to scan
+* @return {Scanner}
+*/
+function scan (url) {
+  return new Scanner(url);
+}
 
 /**
 * Social media scanner
-* @class
 */
-function SocialMediaScanner () {
+var SocialMediaScanner = {
+  scan: scan
+};
 
-  /**
-  * Create a scanner
-  * @param  {string} url The starting URL of the website to scan
-  * @return {Scanner}
-  */
-  this.scan = function (url) {
-    return new Scanner(url);
-  };
-
-}
-
-module.exports = Scanner;
+module.exports = SocialMediaScanner;
