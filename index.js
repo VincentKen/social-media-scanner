@@ -145,8 +145,87 @@ function Scanner (url) {
    */
   this.start = function () {
     scan(mainURL, function (url, found) {
-      console.log("links:", found.links);
-      console.log("media:", found.media);
+      var i, links = found.links, scanned_links = {};
+
+      // save scanned and currently scanning links in scanned_links with true or false showing if they are done scanning
+      scanned_links[url] = true;
+
+      var media = found.media; // a collection of all found social links
+
+      i = 0;
+
+      // start scanning the found links
+      var t = setInterval(function () {
+        var scanned_link;
+
+        if (i >= max) {
+          // check if all links are done scanning
+          for (scanned_link in scanned_links) {
+            if (scanned_links[scanned_link] === false) {
+              return; // wait for next interval
+            }
+          }
+          // all scans are done
+          clearInterval(t);
+          on.done(media);
+          return;
+        }
+
+        var link = links[i];
+
+        if (scanned_links[link] !== undefined && link !== undefined) { // link is scanning or has already been scanned
+          while (scanned_links[link] !== undefined) { // look for unscanned link
+            i++;
+            link = links[i];
+            if (link === undefined) { // at end of array
+              i = links.length; // reset i to the end of the links array and wait for next interval
+              return;
+            }
+          }
+        }
+
+        if (!link) {
+          // if there is no link to scan check if a link is still scanning
+          for (scanned_link in scanned_links) {
+            if (scanned_links[scanned_link] === false) { // link is still scanning
+              // retry next interval
+              i = 0;
+              return;
+            }
+          }
+
+          // all links are done scanning and there are no new links to scan
+          clearInterval(t);
+          on.done(media);
+          return;
+        }
+
+        // start scanning link
+        scanned_links[link] = false;
+
+        i++;
+
+        on.pageStart(link);
+
+        scan(link, function (url, found) {
+          var j;
+
+          for (j = 0; j < found.media.length; j++) {
+            if (media.indexOf(found.media[j]) === -1) {
+              media.push(found.media[j]);
+            }
+          }
+
+          for (j = 0; j < found.links.length; j++) {
+            if (links.indexOf(found.links[j]) === -1) {
+              links.push(found.links[j]);
+            }
+          }
+
+          scanned_links[url] = true;
+          on.pageDone(url, found.media);
+        });
+      }, interval);
     });
   };
 
@@ -157,7 +236,7 @@ function Scanner (url) {
    * @return {void}
    */
   var scan = function (url, callback) {
-
+    console.log(url);
     jsdom.env({
       url: url,
       scripts: ["http://code.jquery.com/jquery.js"],
@@ -252,11 +331,5 @@ function SocialMediaScanner () {
   };
 
 }
-
-socialMediaScanner = new SocialMediaScanner();
-
-scanner = socialMediaScanner.scan("http://www.isaacpvl.com/");
-
-scanner.start();
 
 module.exports = Scanner;
