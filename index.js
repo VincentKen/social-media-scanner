@@ -1,4 +1,5 @@
 var jsdom = require("jsdom");
+var request = require("request");
 var default_media = require("./default_media");
 
 /**
@@ -116,12 +117,6 @@ function Scanner (url) {
   var mainDomain = mainURL.match(domainRegex)[1];
   var mainExtension = mainURL.match(extensionRegex)[1];
 
-  var supportedExtensions = [".html", ".htm", "", ".php"];
-
-  if (supportedExtensions.indexOf(mainExtension) === -1) {
-    throw {error: "Invalid url extension", supportedExtensions: supportedExtensions};
-  }
-
   this.max = 100;
   this.interval = 250;
 
@@ -154,25 +149,51 @@ function Scanner (url) {
   };
 
   /**
+   * @callback isAcceptedContentCallback
+   * @param {string} url The checked URL
+   * @param {boolean} accepted True if content type is supported false otherwise
+   * @param {Object} error If accepted is false it could be because of an error which is represented in this object
+   */
+
+  /**
+   * jsdom crashes when it try to load xml or other non excepted types
+   * @param {string} url URL to check
+   * @param {isAcceptedContentCallback} callback Callback
+   */
+  this.isAcceptedContent = function (url, callback) {
+    request.head(url, function (err, response, body) {
+      if (err) {
+        return callback(url, false, err);
+      }
+
+      var type = response.headers["content-type"];
+
+      if (type.indexOf("text/html") > -1) {
+        return callback(url, true);
+      } else {
+        return callback(url, false);
+      }
+    });
+  };
+
+  /**
    * Start scanning
    * @return {void}
    */
   this.start = function () {
     scan(mainURL, function (url, found) {
-      var i, links = found.links, scanned_links = {};
-
+      var i, links = [url].concat(found.links), scanned_links = {};
       // save scanned and currently scanning links in scanned_links with true or false showing if they are done scanning
       scanned_links[url] = true;
-
       var media = found.media; // a collection of all found social links
 
-      i = 0;
+      i = 1; // main URL is at index 0
 
       // start scanning the found links
       var t = setInterval(function () {
         var scanned_link;
 
-        if (i >= _this.max) {
+        if (Object.keys(scanned_links).length >= _this.max) {
           // check if all links are done scanning
           for (scanned_link in scanned_links) {
             if (scanned_links[scanned_link] === false) {
@@ -221,7 +242,6 @@ function Scanner (url) {
 
         scan(link, function (url, found) {
           var j;
-
           for (j = 0; j < found.media.length; j++) {
             if (media.indexOf(found.media[j]) === -1) {
               media.push(found.media[j]);
@@ -234,9 +254,11 @@ function Scanner (url) {
             }
           }
 
+          i = 1;
           scanned_links[url] = true;
           on.pageDone(url, found.media);
         });
+
       }, _this.interval);
     });
   };
@@ -277,20 +299,46 @@ function Scanner (url) {
             values.push($(this).attr("href"));
           });
 
-          return callback(url, checkURLs(values));
+          checkURLs(values, function (found) {
+            return callback(url, found);
+          });
         });
       }
     });
   };
 
+  /**
+   * @callback checkURLsCallback
+   * @param {Object} found
+   * @param {string[]} found.links Found links with the same domain as the main domain
+   * @param {string[]} found.media Found links pointing to social media
+   */
 
   /**
    * Check list of urls for media links and links with same domain
-   * @param  {string[]} urls List of urls to check
-   * @return {Object}        Object with links and media properties
+   * @param {string[]} urls List of urls to check
+   * @param {checkURLsCallback} callback
    */
-  var checkURLs = function (urls) {
+  var checkURLs = function (urls, callback) {
     var found_links = [], found_media = [];
+
+    // checking url requires that the url has an accepted content-type
+    // getting the content-type requires making a HEAD request to the url
+    var testing = 0, testing_done = 0;
+
+    // callback for isAcceptedContent
+    var isAcceptedContentCallback = function (url, accepted, error) {
+      if (accepted && found_links.indexOf(url) === -1) {
+        found_links.push(url);
+      }
+      testing_done++;
+      if (testing_done === testing) {
+        callback({
+          links: found_links,
+          media: found_media
+        });
+      }
+    };
 
     for (var i = 0; i < urls.length; i++) {
       var link_domain, link_protocol, link_extension, link_url;
@@ -327,23 +375,13 @@ function Scanner (url) {
           link_extension = undefined;
         }
 
-        if (mainDomain === link_domain &&
-        found_links.indexOf(link_url) === -1 &&
-        supportedExtensions.indexOf(link_extension) > -1 &&
-        !rssRegex.test(link_url)) {
-
-          found_links.push(link_url);
-
+        if (mainDomain === link_domain && found_links.indexOf(link_url) === -1) {
+          testing++;
+          _this.isAcceptedContent(link_url, isAcceptedContentCallback);
         }
       }
     }
-
-    return {
-      links: found_links,
-      media: found_media
-    };
   };
-
 }
 
 /**
