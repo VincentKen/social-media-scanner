@@ -109,9 +109,18 @@ function Scanner (url) {
 
   var protocolRegex = /http:|https:/;
   var domainRegex = /(?:http:|https:)\/\/(?:w{3}\.|)([^\/]*)/;
+  var extensionRegex = /(?:http:|https:)\/\/(?:w{3}\.|)(?:[^\/]*)(?:[^\.]*)(.*)/;
+  var rssRegex = /([^\/]\/(?=rss))/;
 
   var mainProtocol = mainURL.match(protocolRegex)[0];
   var mainDomain = mainURL.match(domainRegex)[1];
+  var mainExtension = mainURL.match(extensionRegex)[1];
+
+  var supportedExtensions = [".html", ".htm", "", ".php"];
+
+  if (supportedExtensions.indexOf(mainExtension) === -1) {
+    throw {error: "Invalid url extension", supportedExtensions: supportedExtensions};
+  }
 
   var max = 100;
   var interval = 250;
@@ -137,6 +146,8 @@ function Scanner (url) {
       throw {error: "Missing parameteer: callback"};
     }
     on[eventName] = callback;
+
+    return this;
   };
 
   /**
@@ -236,14 +247,13 @@ function Scanner (url) {
    * @return {void}
    */
   var scan = function (url, callback) {
-
     jsdom.env({
       url: url,
       scripts: ["http://code.jquery.com/jquery.js"],
       done: function (err, window) {
         if (err) {
           on.error({
-            message: "Error retrieving page.",
+            message: "Error retrieving page",
             page: url,
             error: err
           });
@@ -263,55 +273,73 @@ function Scanner (url) {
             values.push($(this).attr("href"));
           });
 
-          var found_links = [], found_media = [];
-
-          for (var i = 0; i < values.length; i++) {
-            var link_domain, link_protocol, link_url;
-            link_url = values[i];
-
-            if (!link_url) { continue; }
-            link_url = link_url.trim();
-
-            if (found_media.indexOf(link_url) === -1 && isMedium(link_url)) {
-              found_media.push(link_url);
-            } else {
-
-              if (isValidURL(link_url)) {
-                link_protocol = link_url.match(protocolRegex)[0];
-                link_domain = link_url.match(domainRegex)[1];
-
-              // check if url is a relative path
-              } else if (!/.*\:.*/.test(link_url) && link_url[0] !== "#") {
-                link_protocol = mainProtocol;
-                link_domain = mainDomain;
-
-                if (link_url[0] !== "/") {
-                  link_url = "/" + link_url;
-                }
-
-                link_url = link_protocol + "//" + link_domain + link_url;
-
-              } else {
-                link_domain = undefined;
-                link_protocol = undefined;
-              }
-
-              if (mainDomain === link_domain && found_links.indexOf(link_url) === -1) {
-                found_links.push(link_url);
-              }
-            }
-          }
-
-          return callback(url, {
-            links: found_links,
-            media: found_media
-          });
+          return callback(url, checkURLs(values));
         });
-
       }
     });
-
   };
+
+
+  /**
+   * Check list of urls for media links and links with same domain
+   * @param  {string[]} urls List of urls to check
+   * @return {Object}        Object with links and media properties
+   */
+  var checkURLs = function (urls) {
+    var found_links = [], found_media = [];
+
+    for (var i = 0; i < urls.length; i++) {
+      var link_domain, link_protocol, link_extension, link_url;
+      link_url = urls[i];
+
+      if (!link_url) { continue; }
+      link_url = link_url.trim();
+
+      if (found_media.indexOf(link_url) === -1 && isMedium(link_url)) {
+        found_media.push(link_url);
+      } else {
+
+        if (isValidURL(link_url)) {
+          link_protocol = link_url.match(protocolRegex)[0];
+          link_domain = link_url.match(domainRegex)[1];
+          link_extension = link_url.match(extensionRegex)[1];
+
+          // check if url is a relative path
+        } else if (!/.*\:.*/.test(link_url) && link_url[0] !== "#") {
+          link_protocol = mainProtocol;
+          link_domain = mainDomain;
+
+          if (link_url[0] !== "/") {
+            link_url = "/" + link_url;
+          }
+
+          link_url = link_protocol + "//" + link_domain + link_url;
+
+          link_extension = link_url.match(extensionRegex)[1];
+
+        } else {
+          link_domain = undefined;
+          link_protocol = undefined;
+          link_extension = undefined;
+        }
+
+        if (mainDomain === link_domain &&
+        found_links.indexOf(link_url) === -1 &&
+        supportedExtensions.indexOf(link_extension) > -1 &&
+        !rssRegex.test(link_url)) {
+
+          found_links.push(link_url);
+
+        }
+      }
+    }
+
+    return {
+      links: found_links,
+      media: found_media
+    };
+  };
+
 }
 
 /**
