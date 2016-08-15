@@ -216,9 +216,7 @@ function Scanner (url) {
 
         // start scanning link
         scanned_links[link] = false;
-
         i++;
-
         on.pageStart(link);
 
         scan(link, function (url, found) {
@@ -260,7 +258,10 @@ function Scanner (url) {
             page: url,
             error: err
           });
-          return callback(url, {});
+          return callback(url, {
+            links: [],
+            media: []
+          });
         }
 
         var $ = window.jQuery;
