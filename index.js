@@ -122,8 +122,11 @@ function Scanner (url) {
     throw {error: "Invalid url extension", supportedExtensions: supportedExtensions};
   }
 
-  var max = 100;
-  var interval = 250;
+  this.max = 100;
+  this.interval = 250;
+
+  var _this = this;
+
 
   var on = {
     error: function () {},
@@ -147,7 +150,7 @@ function Scanner (url) {
     }
     on[eventName] = callback;
 
-    return this;
+    return _this;
   };
 
   /**
@@ -169,7 +172,7 @@ function Scanner (url) {
       var t = setInterval(function () {
         var scanned_link;
 
-        if (i >= max) {
+        if (i >= _this.max) {
           // check if all links are done scanning
           for (scanned_link in scanned_links) {
             if (scanned_links[scanned_link] === false) {
@@ -236,7 +239,7 @@ function Scanner (url) {
           scanned_links[url] = true;
           on.pageDone(url, found.media);
         });
-      }, interval);
+      }, _this.interval);
     });
   };
 
