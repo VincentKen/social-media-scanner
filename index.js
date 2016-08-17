@@ -122,7 +122,6 @@ function Scanner (url) {
 
   var _this = this;
 
-
   var on = {
     error: function () {},
     done: function () {},
@@ -149,7 +148,7 @@ function Scanner (url) {
   };
 
   /**
-   * @callback isAcceptedContentCallback
+   * @callback hasAcceptedContentCallback
    * @param {string} url The checked URL
    * @param {boolean} accepted True if content type is supported false otherwise
    * @param {Object} error If accepted is false it could be because of an error which is represented in this object
@@ -158,17 +157,17 @@ function Scanner (url) {
   /**
    * jsdom crashes when it try to load xml or other non excepted types
    * @param {string} url URL to check
-   * @param {isAcceptedContentCallback} callback Callback
+   * @param {hasAcceptedContentCallback} callback Callback
    */
-  this.isAcceptedContent = function (url, callback) {
+  this.hasAcceptedContent = function (url, callback) {
     request.head(url, function (err, response, body) {
-      if (err) {
+      if (err || response.statusCode !== 200) {
         return callback(url, false, err);
       }
 
       var type = response.headers["content-type"];
 
-      if (type.indexOf("text/html") > -1) {
+      if (type && type.indexOf("text/html") > -1) {
         return callback(url, true);
       } else {
         return callback(url, false);
@@ -181,32 +180,47 @@ function Scanner (url) {
    * @return {void}
    */
   this.start = function () {
+    on.pageStart(mainURL);
     scan(mainURL, function (url, found) {
+      on.pageDone(mainURL);
       var i, links = [url].concat(found.links), scanned_links = {};
+
       // save scanned and currently scanning links in scanned_links with true or false showing if they are done scanning
       scanned_links[url] = true;
-      var media = found.media; // a collection of all found social links
+
+      // all links without a combatible content-type and all links which could not be loaded will get property true
+      blocked_links = {};
+
+      var media = found.media || []; // a collection of all found social media links
 
       i = 1; // main URL is at index 0
 
+      /**
+       * Check if all links are done scanning
+       * @return {Boolean}
+       */
+      var doneScanning = function () {
+        var link;
+        for (link in scanned_links) {
+          if (scanned_links[link] === false) {
+            return false;
+          }
+        }
+        return true;
+      };
+
       // start scanning the found links
       var t = setInterval(function () {
-        var scanned_link;
+        var link = links[i];
 
         if (Object.keys(scanned_links).length >= _this.max) {
-          // check if all links are done scanning
-          for (scanned_link in scanned_links) {
-            if (scanned_links[scanned_link] === false) {
-              return; // wait for next interval
-            }
-          }
-          // all scans are done
           clearInterval(t);
-          on.done(media);
+
+          if (doneScanning()) {
+            on.done(media);
+          }
           return;
         }
-
-        var link = links[i];
 
         if (scanned_links[link] !== undefined && link !== undefined) { // link is scanning or has already been scanned
           while (scanned_links[link] !== undefined) { // look for unscanned link
@@ -219,44 +233,56 @@ function Scanner (url) {
           }
         }
 
+        // if there is no link to scan check if another link is still scanning
         if (!link) {
-          // if there is no link to scan check if a link is still scanning
-          for (scanned_link in scanned_links) {
-            if (scanned_links[scanned_link] === false) { // link is still scanning
-              // retry next interval
-              i = 0;
-              return;
-            }
+          if (doneScanning()) {
+            clearInterval(t);
+            on.done(media);
+          } else {
+            i = 0; // check for new links in the next interval
           }
-
-          // all links are done scanning and there are no new links to scan
-          clearInterval(t);
-          on.done(media);
           return;
         }
 
-        // start scanning link
-        scanned_links[link] = false;
         i++;
-        on.pageStart(link);
 
-        scan(link, function (url, found) {
-          var j;
-          for (j = 0; j < found.media.length; j++) {
-            if (media.indexOf(found.media[j]) === -1) {
-              media.push(found.media[j]);
-            }
+        if (blocked_links[link]) {
+          return;
+        }
+        scanned_links[link] = false;
+
+        _this.hasAcceptedContent(link, function (link, accepted, error) {
+          if (!accepted || error) {
+            delete scanned_links[link];
+            blocked_links[link] = true;
+            return;
           }
 
-          for (j = 0; j < found.links.length; j++) {
-            if (links.indexOf(found.links[j]) === -1) {
-              links.push(found.links[j]);
-            }
-          }
+          on.pageStart(link);
 
-          i = 1;
-          scanned_links[url] = true;
-          on.pageDone(url, found.media);
+          scan(link, function (url, found) {
+            var j;
+            for (j = 0; j < found.media.length; j++) {
+              if (media.indexOf(found.media[j]) === -1) {
+                media.push(found.media[j]);
+              }
+            }
+
+            for (j = 0; j < found.links.length; j++) {
+              if (links.indexOf(found.links[j]) === -1) {
+                links.push(found.links[j]);
+              }
+            }
+
+            i = 1;
+            on.pageDone(url, found.media);
+            scanned_links[url] = true;
+
+            if (Object.keys(scanned_links).length >= _this.max && doneScanning()) {
+              clearInterval(t);
+              on.done(media);
+            }
+          });
         });
 
       }, _this.interval);
@@ -270,9 +296,15 @@ function Scanner (url) {
    * @return {void}
    */
   var scan = function (url, callback) {
+    var t = new Date().getTime();
     jsdom.env({
       url: url,
       scripts: ["http://code.jquery.com/jquery.js"],
+      features: {
+        FetchExternalResources: ["script"],
+        ProcessExternalResources: ["script"],
+        SkipExternalResources: false
+      },
       done: function (err, window) {
         if (err) {
           on.error({
@@ -285,7 +317,6 @@ function Scanner (url) {
             media: []
           });
         }
-
         var $ = window.jQuery;
 
         $(window.document).ready(function () {
@@ -295,7 +326,7 @@ function Scanner (url) {
             values.push($(this).attr("data-href"));
           });
 
-          $("[href]").each(function () {
+          $("a").each(function () {
             values.push($(this).attr("href"));
           });
 
@@ -321,24 +352,6 @@ function Scanner (url) {
    */
   var checkURLs = function (urls, callback) {
     var found_links = [], found_media = [];
-
-    // checking url requires that the url has an accepted content-type
-    // getting the content-type requires making a HEAD request to the url
-    var testing = 0, testing_done = 0;
-
-    // callback for isAcceptedContent
-    var isAcceptedContentCallback = function (url, accepted, error) {
-      if (accepted && found_links.indexOf(url) === -1) {
-        found_links.push(url);
-      }
-      testing_done++;
-      if (testing_done === testing) {
-        callback({
-          links: found_links,
-          media: found_media
-        });
-      }
-    };
 
     for (var i = 0; i < urls.length; i++) {
       var link_domain, link_protocol, link_extension, link_url;
@@ -375,12 +388,16 @@ function Scanner (url) {
           link_extension = undefined;
         }
 
-        if (mainDomain === link_domain && found_links.indexOf(link_url) === -1) {
-          testing++;
-          _this.isAcceptedContent(link_url, isAcceptedContentCallback);
+        if (mainDomain === link_domain && found_links.indexOf(link_url) === -1 && found_links.indexOf(link_url) === -1) {
+          found_links.push(link_url);
         }
       }
     }
+
+    return callback({
+      media: found_media,
+      links: found_links
+    });
   };
 }
 
