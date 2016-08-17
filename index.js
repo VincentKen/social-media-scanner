@@ -161,6 +161,7 @@ function Scanner (url) {
    */
   this.hasAcceptedContent = function (url, callback) {
     request.head(url, function (err, response, body) {
+
       if (err || response.statusCode !== 200) {
         return callback(url, false, err);
       }
@@ -250,7 +251,6 @@ function Scanner (url) {
           return;
         }
         scanned_links[link] = false;
-
         _this.hasAcceptedContent(link, function (link, accepted, error) {
           if (!accepted || error) {
             delete scanned_links[link];
@@ -296,7 +296,6 @@ function Scanner (url) {
    * @return {void}
    */
   var scan = function (url, callback) {
-    var t = new Date().getTime();
     jsdom.env({
       url: url,
       scripts: ["http://code.jquery.com/jquery.js"],
