@@ -123,10 +123,37 @@ function Scanner (url) {
   var _this = this;
 
   var on = {
-    error: function () {},
-    done: function () {},
-    pageDone: function () {},
-    pageStart: function () {}
+    /**
+     * This function is called when an exception is thrown
+     * @param {Object} error Exception
+     */
+    error: function (error) {},
+    /**
+     * This function is called when the scan is done
+     * @param {string[]} all_media A list of all links to social media found
+     * @param {Object[]} all_pages A list of all scanned pages with properties: key:string, url:string, found.media:string[], found.links:string[]
+     */
+    done: function (all_media, all_pages) {},
+    /**
+     * This function is called when the scan of a page is done
+     * @param {Object} page Page Object
+     * @param {string} page.key
+     * @param {string} page.url
+     * @param {Object} page.found
+     * @param {string[]} page.found.media,
+     * @param {string[]} page.found.links
+     */
+    pageDone: function (page) {},
+    /**
+     * This function is called at the start of the scan of a page
+     * @param {Object} page Page Object
+     * @param {string} page.key
+     * @param {string} page.url
+     * @param {Object} page.found
+     * @param {string[]} page.found.media,
+     * @param {string[]} page.found.links
+     */
+    pageStart: function (page) {}
   };
 
   /**
@@ -181,18 +208,27 @@ function Scanner (url) {
    * @return {void}
    */
   this.start = function () {
-    on.pageStart(mainURL);
-    scan(mainURL, function (url, found) {
-      on.pageDone(mainURL);
-      var i, links = [url].concat(found.links), scanned_links = {};
+    var mainPage = {
+      url: mainURL,
+      found: {media: [], links: []},
+      key: "1"
+    };
+    on.pageStart(mainPage);
+    scan(mainPage, function (mainPage) {
+      on.pageDone(mainPage);
+
+      var i, links = [mainPage.url].concat(mainPage.found.links), scanned_links = {}, pages = [];
+
+      // save pages with url, found links, found media and a key in this list
+      pages.push(mainPage);
 
       // save scanned and currently scanning links in scanned_links with true or false showing if they are done scanning
-      scanned_links[url] = true;
+      scanned_links[mainPage.url] = true;
 
-      // all links without a combatible content-type and all links which could not be loaded will get property true
+      // all links without a compatible content-type and all links which could not be loaded will get property true
       blocked_links = {};
 
-      var media = found.media || []; // a collection of all found social media links
+      var media = mainPage.found.media || []; // a collection of all found social media links
 
       i = 1; // main URL is at index 0
 
@@ -213,7 +249,6 @@ function Scanner (url) {
       // start scanning the found links
       var t = setInterval(function () {
         var link = links[i];
-
         if (Object.keys(scanned_links).length >= _this.max) {
           clearInterval(t);
 
@@ -238,7 +273,7 @@ function Scanner (url) {
         if (!link) {
           if (doneScanning()) {
             clearInterval(t);
-            on.done(media);
+            on.done(media, pages);
           } else {
             i = 0; // check for new links in the next interval
           }
@@ -258,29 +293,39 @@ function Scanner (url) {
             return;
           }
 
-          on.pageStart(link);
+          var page = {
+            url: link,
+            key: Object.keys(scanned_links).indexOf(link) + 1 + "",
+            found: {
+              media: [],
+              links: []
+            }
+          };
 
-          scan(link, function (url, found) {
+          on.pageStart(page);
+
+          scan(page, function (page) {
             var j;
-            for (j = 0; j < found.media.length; j++) {
-              if (media.indexOf(found.media[j]) === -1) {
-                media.push(found.media[j]);
+            for (j = 0; j < page.found.media.length; j++) {
+              if (media.indexOf(page.found.media[j]) === -1) {
+                media.push(page.found.media[j]);
               }
             }
 
-            for (j = 0; j < found.links.length; j++) {
-              if (links.indexOf(found.links[j]) === -1) {
-                links.push(found.links[j]);
+            for (j = 0; j < page.found.links.length; j++) {
+              if (links.indexOf(page.found.links[j]) === -1) {
+                links.push(page.found.links[j]);
               }
             }
 
-            i = 1;
-            on.pageDone(url, found.media);
-            scanned_links[url] = true;
+            on.pageDone(page);
+            pages.push(page);
+
+            scanned_links[page.url] = true;
 
             if (Object.keys(scanned_links).length >= _this.max && doneScanning()) {
               clearInterval(t);
-              on.done(media);
+              on.done(media, pages);
             }
           });
         });
@@ -291,13 +336,17 @@ function Scanner (url) {
 
   /**
    * Scan a single URL
-   * @param  {string}   url      URL to scan
+   * @param  {Object} page Page object with url property to scan
    * @param  {Function} callback Callback function
    * @return {void}
    */
-  var scan = function (url, callback) {
+  var scan = function (page, callback) {
+    page.found = page.found || {};
+    page.found.links = page.found.links || [];
+    page.found.media = page.found.media || [];
+
     jsdom.env({
-      url: url,
+      url: page.url,
       scripts: ["http://code.jquery.com/jquery.js"],
       features: {
         FetchExternalResources: ["script"],
@@ -308,49 +357,55 @@ function Scanner (url) {
         if (err) {
           on.error({
             message: "Error retrieving page",
-            page: url,
+            page: page.url,
             error: err
           });
-          return callback(url, {
-            links: [],
-            media: []
-          });
+          callback(page);
+          window.close();
+          return;
         }
-        var $ = window.jQuery;
+        try {
+          var $ = window.jQuery;
 
-        $(window.document).ready(function () {
-          var values = []; // list of all values to check
+          $(window.document).ready(function () {
+            var values = []; // list of all values to check
 
-          $("[data-href]").each(function () {
-            values.push($(this).attr("data-href"));
+            $("[data-href]").each(function () {
+              values.push($(this).attr("data-href"));
+            });
+
+            $("a").each(function () {
+              values.push($(this).attr("href"));
+            });
+
+            callback(checkURLs(page, values));
+            window.close();
+            return;
           });
-
-          $("a").each(function () {
-            values.push($(this).attr("href"));
+        } catch (e) {
+          on.error({
+            message: "Error scanning page",
+            page: page.url,
+            error: e
           });
-
-          checkURLs(values, function (found) {
-            return callback(url, found);
-          });
-        });
+          callback(page);
+          window.close();
+          return;
+        }
       }
     });
   };
 
   /**
-   * @callback checkURLsCallback
-   * @param {Object} found
-   * @param {string[]} found.links Found links with the same domain as the main domain
-   * @param {string[]} found.media Found links pointing to social media
-   */
-
-  /**
    * Check list of urls for media links and links with same domain
-   * @param {string[]} urls List of urls to check
-   * @param {checkURLsCallback} callback
+   * @param {Object} page Page object
+   * @param {Object} urls List of urls to check
+   * @param {Object}      New page object
    */
-  var checkURLs = function (urls, callback) {
-    var found_links = [], found_media = [];
+  var checkURLs = function (page, urls) {
+    page.found = page.found || {};
+    page.found.media = page.found.media || [];
+    page.found.links = page.found.links || [];
 
     for (var i = 0; i < urls.length; i++) {
       var link_domain, link_protocol, link_extension, link_url;
@@ -359,8 +414,8 @@ function Scanner (url) {
       if (!link_url) { continue; }
       link_url = link_url.trim();
 
-      if (found_media.indexOf(link_url) === -1 && isMedium(link_url)) {
-        found_media.push(link_url);
+      if (page.found.media.indexOf(link_url) === -1 && isMedium(link_url)) {
+        page.found.media.push(link_url);
       } else {
 
         if (isValidURL(link_url)) {
@@ -387,16 +442,12 @@ function Scanner (url) {
           link_extension = undefined;
         }
 
-        if (mainDomain === link_domain && found_links.indexOf(link_url) === -1 && found_links.indexOf(link_url) === -1) {
-          found_links.push(link_url);
+        if (mainDomain === link_domain && page.found.links.indexOf(link_url) === -1 && page.found.links.indexOf(link_url) === -1) {
+          page.found.links.push(link_url);
         }
       }
     }
-
-    return callback({
-      media: found_media,
-      links: found_links
-    });
+    return page;
   };
 }
 
