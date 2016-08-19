@@ -471,26 +471,4 @@ var SocialMediaScanner = {
   scan: scan
 };
 
-var site1 = SocialMediaScanner.scan("https://elliotforbes.co.uk/");
-
-site1.on("pageStart", function (page) {
-  console.log(page.url);
-});
-
-site1.on("pageDone", function (page) {
-  console.log("Done: " + page.url);
-});
-
-site1.on("done", function (media, pages) {
-  console.log(media);
-});
-
-site1.on("error", function (err) {
-  console.log(err);
-});
-
-site1.max = 10;
-
-site1.start();
-
 module.exports = SocialMediaScanner;
