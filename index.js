@@ -357,7 +357,7 @@ function Scanner (url) {
         if (err) {
           on.error({
             message: "Error retrieving page",
-            page: page.url,
+            page: page,
             error: err
           });
           callback(page);
@@ -376,7 +376,7 @@ function Scanner (url) {
 
             $("a").each(function () {
               values.push($(this).attr("href"));
-            });
+            });            
 
             callback(checkURLs(page, values));
             window.close();
@@ -385,7 +385,7 @@ function Scanner (url) {
         } catch (e) {
           on.error({
             message: "Error scanning page",
-            page: page.url,
+            page: page,
             error: e
           });
           callback(page);
@@ -466,5 +466,27 @@ function scan (url) {
 var SocialMediaScanner = {
   scan: scan
 };
+
+var site1 = SocialMediaScanner.scan("https://elliotforbes.co.uk/");
+
+site1.on("pageStart", function (page) {
+  console.log(page.url);
+});
+
+site1.on("pageDone", function (page) {
+  console.log("Done: " + page.url);
+});
+
+site1.on("done", function (media, pages) {
+  console.log(media);
+});
+
+site1.on("error", function (err) {
+  console.log(err);
+});
+
+site1.max = 10;
+
+site1.start();
 
 module.exports = SocialMediaScanner;
