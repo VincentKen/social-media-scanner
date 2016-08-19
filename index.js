@@ -103,7 +103,11 @@ function createRegexPart(part) {
 function Scanner (url) {
 
   if (!isValidURL(url)) {
-    throw {error: "Invalid URL"};
+    throw {
+      message: "Expected URL with format: (http:|https)//(domain)/(optional path)",
+      url: url,
+      error: "Invalid URL"
+    };
   }
 
   var mainURL = url;
@@ -376,7 +380,7 @@ function Scanner (url) {
 
             $("a").each(function () {
               values.push($(this).attr("href"));
-            });            
+            });
 
             callback(checkURLs(page, values));
             window.close();
