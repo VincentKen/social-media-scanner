@@ -365,7 +365,7 @@ function Scanner (url) {
             error: err
           });
           callback(page);
-          window.close();
+          if (window && window.close) window.close();
           return;
         }
         try {
@@ -383,7 +383,7 @@ function Scanner (url) {
             });
 
             callback(checkURLs(page, values));
-            window.close();
+            if (window && window.close) window.close();
             return;
           });
         } catch (e) {
@@ -393,7 +393,7 @@ function Scanner (url) {
             error: e
           });
           callback(page);
-          window.close();
+          if (window && window.close) window.close();
           return;
         }
       }
