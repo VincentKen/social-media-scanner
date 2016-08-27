@@ -49,7 +49,7 @@ The callback for this event has one page object parameter.
 The page object has the following properties:
  - `url`: The url of the page which just started scanning
  - `key`: A unique key for this page
- - `found`: an object with a list of all found link(`links: string[]`) and a list of all found media(`media: string[]`).
+ - `found`: an object with a list of all found links (`links: string[]`) and a list of all found media(`media: string[]`).
 page.found.media and page.found.links are just empty arrays at the start of the scan
 
 ```javascript
