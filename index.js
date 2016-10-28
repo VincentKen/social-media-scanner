@@ -1,6 +1,6 @@
 var jsdom = require("jsdom");
 var request = require("request");
-var default_media = require("./default_media");
+var defaultMedia = require("./default_media");
 
 /**
  * Checks if url parameter is a valid URL
@@ -20,9 +20,9 @@ function isValidURL(url) {
  * @return {Boolean}
  */
 function isMedium(url, options) {
-  var regexString = "/(";
+  var regexString = "/*.(";
   options = options || {};
-  var media = options.media || default_media;
+  var media = options.media || defaultMedia;
   var customExpression = options.customExpression;
 
   var i;
@@ -67,6 +67,11 @@ function createRegexPart(part) {
     part_copy += part[i];
   }
 
+  // ignore parts which are to small like fb.com/ or vk.com/
+  if (part.split(".").length === 2 && part.split(".")[0].length <= 3) {
+    return part_copy;
+  }
+
   // start creating regexPart
   for (i = 0; i < part_copy.length; i++) {
     // each loop will move the . one step further in part_copy and add it to regex
@@ -95,13 +100,7 @@ function createRegexPart(part) {
   return regex.slice(0, regex.length - 1); // remove | from end of string
 }
 
-/**
- * Scanner class
- * @param {url} url The starting URL of the website to scan
- * @class
- */
-function Scanner (url) {
-
+function Scanner(url) {
   if (!isValidURL(url)) {
     throw {
       message: "Expected URL with format: (http:|https)//(domain)/(optional path)",
@@ -121,8 +120,11 @@ function Scanner (url) {
   var mainDomain = mainURL.match(domainRegex)[1];
   var mainExtension = mainURL.match(extensionRegex)[1];
 
-  this.max = 100;
-  this.interval = 250;
+  var defaultInterval = 250;
+  var defaultMax = 100;
+
+  this.max = defaultMax;
+  this.interval = defaultInterval;
 
   var _this = this;
 
@@ -179,176 +181,19 @@ function Scanner (url) {
   };
 
   /**
-   * @callback hasAcceptedContentCallback
-   * @param {string} url The checked URL
-   * @param {boolean} accepted True if content type is supported false otherwise
-   * @param {Object} error If accepted is false it could be because of an error which is represented in this object
-   */
-
-  /**
-   * jsdom crashes when it try to load xml or other non excepted types
-   * @param {string} url URL to check
-   * @param {hasAcceptedContentCallback} callback Callback
-   */
-  this.hasAcceptedContent = function (url, callback) {
-    request.head(url, function (err, response, body) {
-
-      if (err || response.statusCode !== 200) {
-        return callback(url, false, err);
-      }
-
-      var type = response.headers["content-type"];
-
-      if (type && type.indexOf("text/html") > -1) {
-        return callback(url, true);
-      } else {
-        return callback(url, false);
-      }
-    });
-  };
-
-  /**
-   * Start scanning
-   * @return {void}
-   */
-  this.start = function () {
-    var mainPage = {
-      url: mainURL,
-      found: {media: [], links: []},
-      key: "1"
-    };
-    on.pageStart(mainPage);
-    scan(mainPage, function (mainPage) {
-      on.pageDone(mainPage);
-
-      var i, links = [mainPage.url].concat(mainPage.found.links), scanned_links = {}, pages = [];
-
-      // save pages with url, found links, found media and a key in this list
-      pages.push(mainPage);
-
-      // save scanned and currently scanning links in scanned_links with true or false showing if they are done scanning
-      scanned_links[mainPage.url] = true;
-
-      // all links without a compatible content-type and all links which could not be loaded will get property true
-      blocked_links = {};
-
-      var media = mainPage.found.media || []; // a collection of all found social media links
-
-      i = 1; // main URL is at index 0
-
-      /**
-       * Check if all links are done scanning
-       * @return {Boolean}
-       */
-      var doneScanning = function () {
-        var link;
-        for (link in scanned_links) {
-          if (scanned_links[link] === false) {
-            return false;
-          }
-        }
-        return true;
-      };
-
-      // start scanning the found links
-      var t = setInterval(function () {
-        var link = links[i];
-        if (Object.keys(scanned_links).length >= _this.max) {
-          clearInterval(t);
-
-          if (doneScanning()) {
-            on.done(media);
-          }
-          return;
-        }
-
-        if (scanned_links[link] !== undefined && link !== undefined) { // link is scanning or has already been scanned
-          while (scanned_links[link] !== undefined) { // look for unscanned link
-            i++;
-            link = links[i];
-            if (link === undefined) { // at end of array
-              i = links.length; // reset i to the end of the links array and wait for next interval
-              return;
-            }
-          }
-        }
-
-        // if there is no link to scan check if another link is still scanning
-        if (!link) {
-          if (doneScanning()) {
-            clearInterval(t);
-            on.done(media, pages);
-          } else {
-            i = 0; // check for new links in the next interval
-          }
-          return;
-        }
-
-        i++;
-
-        if (blocked_links[link]) {
-          return;
-        }
-        scanned_links[link] = false;
-        _this.hasAcceptedContent(link, function (link, accepted, error) {
-          if (!accepted || error) {
-            delete scanned_links[link];
-            blocked_links[link] = true;
-            return;
-          }
-
-          var page = {
-            url: link,
-            key: Object.keys(scanned_links).indexOf(link) + 1 + "",
-            found: {
-              media: [],
-              links: []
-            }
-          };
-
-          on.pageStart(page);
-
-          scan(page, function (page) {
-            var j;
-            for (j = 0; j < page.found.media.length; j++) {
-              if (media.indexOf(page.found.media[j]) === -1) {
-                media.push(page.found.media[j]);
-              }
-            }
-
-            for (j = 0; j < page.found.links.length; j++) {
-              if (links.indexOf(page.found.links[j]) === -1) {
-                links.push(page.found.links[j]);
-              }
-            }
-
-            on.pageDone(page);
-            pages.push(page);
-
-            scanned_links[page.url] = true;
-
-            if (Object.keys(scanned_links).length >= _this.max && doneScanning()) {
-              clearInterval(t);
-              on.done(media, pages);
-            }
-          });
-        });
-
-      }, _this.interval);
-    });
-  };
-
-  /**
    * Scan a single URL
    * @param  {Object} page Page object with url property to scan
    * @param  {Function} callback Callback function
+   * @param  {number} counter When JSDOM failes the function will try again.
+   *                          counter is used to keep track of how many times this function has been called for this url
+   *                          dont change the value of counter when calling from outside this function
    * @return {void}
    */
-  var scan = function (page, callback) {
+  var scan = function (page, callback, counter) {
+    counter = counter || 0;
     page.found = page.found || {};
     page.found.links = page.found.links || [];
     page.found.media = page.found.media || [];
-
     jsdom.env({
       url: page.url,
       scripts: ["http://code.jquery.com/jquery.js"],
@@ -359,6 +204,12 @@ function Scanner (url) {
       },
       done: function (err, window) {
         if (err) {
+          if (err.code === "ENOTFOUND" && counter < 3) {
+            scan(page, callback, ++counter);
+            if (window && window.close) window.close();
+            return;
+          }
+
           on.error({
             message: "Error retrieving page",
             page: page,
@@ -403,10 +254,11 @@ function Scanner (url) {
   /**
    * Check list of urls for media links and links with same domain
    * @param {Object} page Page object
-   * @param {Object} urls List of urls to check
+   * @param {string[]} urls List of urls to check
    * @param {Object}      New page object
    */
   var checkURLs = function (page, urls) {
+
     page.found = page.found || {};
     page.found.media = page.found.media || [];
     page.found.links = page.found.links || [];
@@ -421,13 +273,12 @@ function Scanner (url) {
       if (page.found.media.indexOf(link_url) === -1 && isMedium(link_url)) {
         page.found.media.push(link_url);
       } else {
-
         if (isValidURL(link_url)) {
           link_protocol = link_url.match(protocolRegex)[0];
           link_domain = link_url.match(domainRegex)[1];
           link_extension = link_url.match(extensionRegex)[1];
 
-          // check if url is a relative path
+        // check if url is a path without a domain
         } else if (!/.*\:.*/.test(link_url) && link_url[0] !== "#") {
           link_protocol = mainProtocol;
           link_domain = mainDomain;
@@ -451,7 +302,189 @@ function Scanner (url) {
         }
       }
     }
+
     return page;
+  };
+
+  var createPage = function (url, key) {
+    return {
+      url: url,
+      key: key,
+      found: { media: [], links: [] }
+    };
+  };
+
+  /**
+   * @callback hasAcceptedContentCallback
+   * @param {string} url The checked URL
+   * @param {boolean} accepted True if content type is supported false otherwise
+   * @param {Object} error If accepted is false it could be because of an error which is represented in this object
+   */
+
+  /**
+   * jsdom crashes when it tries to load xml or other non excepted types
+   * @param {string} url URL to check
+   * @param {hasAcceptedContentCallback} callback Callback
+   */
+  this.hasAcceptedContent = function (url, callback) {
+    request.head(url, function (err, response, body) {
+      if (err || response.statusCode !== 200) {
+        return callback(url, false, err);
+      }
+
+      var type = response.headers["content-type"];
+
+      if (type && type.indexOf("text/html") > -1) {
+        return callback(url, true);
+      } else {
+        return callback(url, false);
+      }
+    });
+  };
+
+  this.start = function () {
+    var page = createPage(mainURL, 1);
+
+    on.pageStart(page);
+
+    scan(page, function (page) {
+      on.pageDone(page);
+      if (page.found.links.length === 0) {
+        console.log("calling on done 0");
+        on.done([page.found.media], [page]);
+        return;
+      }
+
+      // list of all scanned pages
+      var pages = [page];
+      // list of all found links
+      var links = [page.url].concat(page.found.links);
+      // keep track of all scanned and currently scanned links
+      var scannedLinks = {};
+      scannedLinks[page.url] = {done: true};
+      var lastKey = 1;
+      blockedLinks = {};
+      var media = page.found.media || [];
+
+      var currentlyScanning = 0; // amount of links currently being scanned
+
+      var i = 1; // entry URL is at index 0
+
+      var doneScanning = function () {
+        var link;
+        for (link in scannedLinks) {
+          if (scannedLinks[link].done === false) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+      var t;
+      var intervalFunction = function () {
+        var link = links[i];
+        if (currentlyScanning >= 100) {
+          // wait with scanning other links
+          clearInterval(t);
+          return;
+        }
+        if (Object.keys(scannedLinks).length >= _this.max) {
+          clearInterval(t);
+          if (doneScanning()) {
+            console.log("calling on done 1");
+            on.done(media, pages);
+          }
+          return;
+        }
+
+        // check if link is already beeing scanned
+        if (scannedLinks[link] !== undefined && link !== undefined) {
+          // search for unscanned link
+          while (scannedLinks[link] !== undefined) {
+            i++;
+            link = links[i];
+            if (link === undefined) { // at end of array
+              clearInterval(t); // wait for a link to scan before checking for new links
+              return;
+            }
+          }
+        }
+
+        // if there is no link to scan check if another link is still scanning
+        if (!link) {
+          clearInterval(t);
+          if (doneScanning()) {
+            console.log("calling on done 2");
+            on.done(media, pages);
+          } else {
+            i = links.length; // check for a new link ones one of the other links is done scanning
+          }
+          return;
+        }
+
+        i++;
+
+        if (blockedLinks[link]) {
+          for (var j = 0; j < links.length; j++) {
+            if (!scannedLinks[links[j]] && !blockedLinks[links[j]]) {
+              link = links[j];
+              i = j + 1;
+            }
+          }
+        }
+
+        scannedLinks[link] = { done: false };
+        // jsdom only accepts resources which contain HTML and crashes on other resources like XML
+        _this.hasAcceptedContent(link, function (link, accepted, error) {
+          if (!accepted || error) {
+            delete scannedLinks[link]; // make room for another link
+            blockedLinks[link] = true;
+            return;
+          }
+
+          var page = createPage(link, ++lastKey + "");
+          currentlyScanning++;
+          on.pageStart(page);
+
+          scan(page, function (page) {
+            var j;
+            for (j = 0; j < page.found.media.length; j++) {
+              if (media.indexOf(page.found.media[j]) === -1) {
+                media.push(page.found.media[j]);
+              }
+            }
+
+            for (j = 0; j < page.found.links.length; j++) {
+              if (links.indexOf(page.found.links[j]) === -1) {
+                links.push(page.found.links[j]);
+              }
+            }
+            on.pageDone(page);
+            pages.push(page);
+
+            scannedLinks[page.url].done = true;
+            currentlyScanning--;
+
+            var linkAmount = Object.keys(scannedLinks).length;
+
+            if (linkAmount >= _this.max && doneScanning()) {
+              clearInterval(t);
+              console.log("calling on done 3");
+              on.done(media, pages);
+            } else if (t === undefined) {
+              t = setInterval(intervalFunction, _this.interval);
+            } else if (doneScanning()) {
+              console.log("LAATSTE", t);
+              on.done(media, pages);
+            }
+          });
+        });
+      };
+
+      t = setInterval(intervalFunction, _this.interval);
+
+    });
+
   };
 }
 
