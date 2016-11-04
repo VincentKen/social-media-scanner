@@ -125,6 +125,7 @@ function Scanner(url) {
 
   this.max = defaultMax;
   this.interval = defaultInterval;
+  this.skipExternalResources = false;
 
   var _this = this;
 
@@ -195,6 +196,7 @@ function Scanner(url) {
     var fetchExternalResources = options.fetchExternalResources || ["scripts"];
     var processExternalResources = options.processExternalResources || ["scripts"];
     var skipExternalResources = options.skipExternalResources || false;
+
     page.found = page.found || {};
     page.found.links = page.found.links || [];
     page.found.media = page.found.media || [];
@@ -348,14 +350,13 @@ function Scanner(url) {
 
   /**
    * Start scanning
-   * @param {boolean} skipExternalResources if true skip loading external resources when getting pages. Default is false
    */
-  this.start = function (skipExternalResources) {
+  this.start = function () {
     var page = createPage(mainURL, 1);
     on.pageStart(page);
 
     var externalResourcesOptions = {};
-    if (skipExternalResources) {
+    if (_this.skipExternalResources) {
       externalResourcesOptions.fetchExternalResources = [];
       externalResourcesOptions.processExternalResources = [];
       externalResourcesOptions.skipExternalResources = true;
@@ -456,6 +457,13 @@ function Scanner(url) {
           var page = createPage(link, ++lastKey + "");
           currentlyScanning++;
           on.pageStart(page);
+
+          var externalResourcesOptions = {};
+          if (_this.skipExternalResources) {
+            externalResourcesOptions.fetchExternalResources = [];
+            externalResourcesOptions.processExternalResources = [];
+            externalResourcesOptions.skipExternalResources = true;
+          }
 
           scan(page, externalResourcesOptions, function (page) {
             var j;
