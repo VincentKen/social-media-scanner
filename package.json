@@ -1,6 +1,6 @@
 {
   "name": "social-media-scanner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Retrieve links to social media from websites",
   "main": "index.js",
   "scripts": {
