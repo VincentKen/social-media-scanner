@@ -189,8 +189,12 @@ function Scanner(url) {
    *                          dont change the value of counter when calling from outside this function
    * @return {void}
    */
-  var scan = function (page, callback, counter) {
+  var scan = function (page, options, callback, counter) {
     counter = counter || 0;
+    options = options || {};
+    var fetchExternalResources = options.fetchExternalResources || ["scripts"];
+    var processExternalResources = options.processExternalResources || ["scripts"];
+    var skipExternalResources = options.skipExternalResources || false;
     page.found = page.found || {};
     page.found.links = page.found.links || [];
     page.found.media = page.found.media || [];
@@ -198,14 +202,14 @@ function Scanner(url) {
       url: page.url,
       scripts: ["http://code.jquery.com/jquery.js"],
       features: {
-        FetchExternalResources: ["script"],
-        ProcessExternalResources: ["script"],
-        SkipExternalResources: false
+        FetchExternalResources: fetchExternalResources,
+        ProcessExternalResources: skipExternalResources,
+        SkipExternalResources: skipExternalResources
       },
       done: function (err, window) {
         if (err) {
           if (err.code === "ENOTFOUND" && counter < 3) {
-            scan(page, callback, ++counter);
+            scan(page, options, callback, ++counter);
             if (window && window.close) window.close();
             return;
           }
@@ -342,15 +346,24 @@ function Scanner(url) {
     });
   };
 
-  this.start = function () {
+  /**
+   * Start scanning
+   * @param {boolean} skipExternalResources if true skip loading external resources when getting pages. Default is false
+   */
+  this.start = function (skipExternalResources) {
     var page = createPage(mainURL, 1);
-
     on.pageStart(page);
 
-    scan(page, function (page) {
+    var externalResourcesOptions = {};
+    if (skipExternalResources) {
+      externalResourcesOptions.fetchExternalResources = [];
+      externalResourcesOptions.processExternalResources = [];
+      externalResourcesOptions.skipExternalResources = true;
+    }
+
+    scan(page, externalResourcesOptions, function (page) {
       on.pageDone(page);
       if (page.found.links.length === 0) {
-        console.log("calling on done 0");
         on.done([page.found.media], [page]);
         return;
       }
@@ -391,7 +404,6 @@ function Scanner(url) {
         if (Object.keys(scannedLinks).length >= _this.max) {
           clearInterval(t);
           if (doneScanning()) {
-            console.log("calling on done 1");
             on.done(media, pages);
           }
           return;
@@ -414,7 +426,6 @@ function Scanner(url) {
         if (!link) {
           clearInterval(t);
           if (doneScanning()) {
-            console.log("calling on done 2");
             on.done(media, pages);
           } else {
             i = links.length; // check for a new link ones one of the other links is done scanning
@@ -446,7 +457,7 @@ function Scanner(url) {
           currentlyScanning++;
           on.pageStart(page);
 
-          scan(page, function (page) {
+          scan(page, externalResourcesOptions, function (page) {
             var j;
             for (j = 0; j < page.found.media.length; j++) {
               if (media.indexOf(page.found.media[j]) === -1) {
@@ -469,12 +480,10 @@ function Scanner(url) {
 
             if (linkAmount >= _this.max && doneScanning()) {
               clearInterval(t);
-              console.log("calling on done 3");
               on.done(media, pages);
             } else if (t === undefined) {
               t = setInterval(intervalFunction, _this.interval);
             } else if (doneScanning()) {
-              console.log("LAATSTE", t);
               on.done(media, pages);
             }
           });
