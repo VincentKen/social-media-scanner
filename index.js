@@ -193,8 +193,8 @@ function Scanner(url) {
   var scan = function (page, options, callback, counter) {
     counter = counter || 0;
     options = options || {};
-    var fetchExternalResources = options.fetchExternalResources || ["scripts"];
-    var processExternalResources = options.processExternalResources || ["scripts"];
+    var fetchExternalResources = options.fetchExternalResources || ["script"];
+    var processExternalResources = options.processExternalResources || ["script"];
     var skipExternalResources = options.skipExternalResources || false;
 
     page.found = page.found || {};
@@ -205,7 +205,7 @@ function Scanner(url) {
       scripts: ["http://code.jquery.com/jquery.js"],
       features: {
         FetchExternalResources: fetchExternalResources,
-        ProcessExternalResources: skipExternalResources,
+        ProcessExternalResources: processExternalResources,
         SkipExternalResources: skipExternalResources
       },
       done: function (err, window) {
@@ -230,7 +230,6 @@ function Scanner(url) {
 
           $(window.document).ready(function () {
             var values = []; // list of all values to check
-
             $("[data-href]").each(function () {
               values.push($(this).attr("data-href"));
             });
@@ -238,6 +237,8 @@ function Scanner(url) {
             $("a").each(function () {
               values.push($(this).attr("href"));
             });
+
+
 
             callback(checkURLs(page, values));
             if (window && window.close) window.close();
@@ -259,12 +260,11 @@ function Scanner(url) {
 
   /**
    * Check list of urls for media links and links with same domain
-   * @param {Object} page Page object
+   * @param {Object}   page Page object
    * @param {string[]} urls List of urls to check
-   * @param {Object}      New page object
+   * @return {Object}        New page object
    */
   var checkURLs = function (page, urls) {
-
     page.found = page.found || {};
     page.found.media = page.found.media || [];
     page.found.links = page.found.links || [];
@@ -364,6 +364,7 @@ function Scanner(url) {
 
     scan(page, externalResourcesOptions, function (page) {
       on.pageDone(page);
+      console.log(page);
       if (page.found.links.length === 0) {
         on.done([page.found.media], [page]);
         return;
