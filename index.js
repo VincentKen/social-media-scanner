@@ -364,7 +364,6 @@ function Scanner(url) {
 
     scan(page, externalResourcesOptions, function (page) {
       on.pageDone(page);
-      console.log(page);
       if (page.found.links.length === 0) {
         on.done([page.found.media], [page]);
         return;
