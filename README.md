@@ -92,7 +92,7 @@ site1.on("error", function (err) {
 A scanner has 3 properties:
  - `max`: The max amount of pages to search through (default: 100).
  - `interval`: The amount of milliseconds between each page scan (default: 250).
- - `skipExternalResources`: 
+ - `skipExternalResources`:
     Social Media Scanner loads external javascript files because some websites get their content from scripts (for example: React websites).  
     Default: false
 ```javascript
@@ -105,6 +105,11 @@ site1.on("pageStart", function (page) {
   }
 });
 ```
+
+### methods
+- `getMedia()`: Returns a list of media to check for
+- `addMedium(med: string[]|string)`: Add one medium or a list of media to the list of media which will be used to check urls
+- `removeMedium(med: string[]|string)`: Remove one medium or a list of media from the list of media which will be used to check urls
 
 ### Starting the scan
 After everything is setup you can start the scan with:
