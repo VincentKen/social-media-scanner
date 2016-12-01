@@ -282,8 +282,6 @@ function Scanner(url) {
               values.push($(this).attr("href"));
             });
 
-
-
             callback(checkURLs(page, values));
             if (window && window.close) window.close();
             return;
@@ -327,6 +325,7 @@ function Scanner(url) {
       if (page.found.media.indexOf(link_url) === -1 && isMedium(link_url, mediaList)) {
         page.found.media.push(link_url);
       } else {
+        // check if link links to another page of the same website
         if (isValidURL(link_url)) {
           link_protocol = link_url.match(protocolRegex)[0];
           link_domain = link_url.match(domainRegex)[1];
