@@ -229,6 +229,10 @@ function Scanner(url) {
    * Scan a single URL
    * @param  {Object} page Page object with url property to scan
    * @param  {Function} callback Callback function
+   * @param  {Object} options
+   * @param  {string[]} options.fetchExternalResource Array of external resources to fetch
+   * @param  {string[]} options.processExternalResources Array of external resources to process
+   * @param  {boolean}  options.skipExternalResources Skip external resources if true
    * @param  {number} counter When JSDOM failes the function will try again.
    *                          counter is used to keep track of how many times this function has been called for this url
    *                          dont change the value of counter when calling from outside this function
