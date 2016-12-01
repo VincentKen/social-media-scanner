@@ -123,6 +123,8 @@ function Scanner(url) {
   var defaultInterval = 250;
   var defaultMax = 100;
 
+  var mediaList = defaultMedia;
+
   this.max = defaultMax;
   this.interval = defaultInterval;
   this.skipExternalResources = false;
@@ -180,6 +182,48 @@ function Scanner(url) {
 
     return _this;
   };
+
+  /**
+   * @return {string[]} List of prefixes for social media links
+   */
+  this.getMedia = function () {
+    return mediaList;
+  }
+
+  /**
+   * @param {(string[]|string)} med List of media or a single medium to be added to the medium list
+   */
+  this.addMedium = function (med) {
+    if (typeof med === "string") {
+      mediaList.push(med);
+    } else if (typeof med === "object") {
+      mediaList = mediaList.concat(med);
+    }
+  }
+
+  /**
+   * @param {(string[]|string)} med List of media or a single medium to be removed from the medium list
+   */
+  this.removeMedium = function (med) {
+    var temp = [];
+    var i;
+
+    if (typeof med === "string") {
+      for (i = 0; i < mediaList.length; i++) {
+        if (med !== mediaList[i]) {
+          temp.push(mediaList[i]);
+        }
+      }
+      mediaList = temp;
+    } else if (typeof med === "object") {
+      for (i = 0; i < mediaList.length; i++) {
+        if (med.indexOf(mediaList[i]) === -1) {
+          temp.push(mediaList[i]);
+        }
+      }
+      mediaList = temp;
+    }
+  }
 
   /**
    * Scan a single URL
@@ -276,7 +320,11 @@ function Scanner(url) {
       if (!link_url) { continue; }
       link_url = link_url.trim();
 
-      if (page.found.media.indexOf(link_url) === -1 && isMedium(link_url)) {
+      if (link_url[link_url.length - 1] === "/") {
+        link_url = link_url.slice(0, link_url.length - 1);
+      }
+
+      if (page.found.media.indexOf(link_url) === -1 && isMedium(link_url, mediaList)) {
         page.found.media.push(link_url);
       } else {
         if (isValidURL(link_url)) {
