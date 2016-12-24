@@ -124,6 +124,7 @@ function Scanner(url) {
   var defaultMax = 100;
 
   var mediaList = defaultMedia;
+  var useWindowClose = true;
 
   this.max = defaultMax;
   this.interval = defaultInterval;
@@ -279,15 +280,23 @@ function Scanner(url) {
           $(window.document).ready(function () {
             var values = []; // list of all values to check
             $("[data-href]").each(function () {
-              values.push($(this).attr("data-href"));
+              var attr = $(this).attr("data-href");
+              if (typeof attr === "string" && values.indexOf(attr) === -1) {
+                values.push(attr);
+              }
             });
 
             $("a").each(function () {
-              values.push($(this).attr("href"));
+              var attr = $(this).attr("href");
+              if (typeof attr === "string" && values.indexOf(attr) === -1) {
+                values.push(attr);
+              }
             });
 
             callback(checkURLs(page, values));
-            if (window && window.close) window.close();
+            if (window && window.close && useWindowClose) {
+              window.close();
+            }
             return;
           });
         } catch (e) {
@@ -297,7 +306,9 @@ function Scanner(url) {
             error: e
           });
           callback(page);
-          if (window && window.close) window.close();
+          if (window && window.close && useWindowClose) {
+              window.close();
+          }
           return;
         }
       }
