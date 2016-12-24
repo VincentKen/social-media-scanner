@@ -25,5 +25,8 @@
   "dependencies": {
     "jsdom": "^9.9.1",
     "request": "^2.74.0"
+  },
+  "devDependencies": {
+    "eslint": "^3.12.2"
   }
 }
