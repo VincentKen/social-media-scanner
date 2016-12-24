@@ -1,6 +1,8 @@
-var jsdom = require("jsdom");
-var request = require("request");
-var defaultMedia = require("./default_media");
+"use strict";
+
+const jsdom = require("jsdom");
+const request = require("request");
+const defaultMedia = require("./default_media");
 
 /**
  * Checks if url parameter is a valid URL
@@ -12,39 +14,46 @@ function isValidURL(url) {
 }
 
 /**
- * Check if url is a link to social media
- * @param  {string}   url                      URL to check
- * @param  {Object}   options                  Options object
- * @param  {string[]} options.media            List of social media prefixes (["facebook.com/", "twitter.com/"])
- * @param  {RegExp}   options.customExpression Check if URL is a medium using this customExpression AND the created regular expression
- * @return {Boolean}
+ * Create a regular expression from a list of media
+ * @param  {string[]} media list of social media prefixes
+ * @return {RegExp}       Regular expression with social media
  */
-function isMedium(url, options) {
-  var regexString = "/*.(";
-  options = options || {};
-  var media = options.media || defaultMedia;
-  var customExpression = options.customExpression;
+function createMediumRegex(media) {
+  let regexString = "/*(";
 
-  var i;
-
-  // start creating regex
-
-  for (i = 0; i < media.length; i++) {
-    regexString += createRegexPart(media[i]) + "|";
+  for (let medium of media) {
+    regexString += createRegexPart(medium) + "|";
   }
 
   // remove | from end of string and start a new capture group
   regexString = regexString.slice(0, regexString.length - 1) + ")(.*)";
 
-  var regex = new RegExp(regexString);
+  return new RegExp(regexString);
+}
+
+/**
+ * Check if url is a link to social media
+ * @param  {string}   url                      URL to check
+ * @param  {Object}   options                  Options object
+ * @param  {string[]} options.media            List of social media prefixes (["facebook.com/", "twitter.com/"])
+ * @param  {RegExp}   options.customExpression Check if URL is a medium using this customExpression
+ * @return {Boolean}
+ */
+function isMedium(url, options) {
+  let regexString = "/*.(";
+  options = options || {};
+  let media = options.media || defaultMedia;
+  let customExpression = options.customExpression;
 
   if (customExpression) {
     if (typeof customExpression === "string") {
       customExpression = new RegExp(customExpression);
     }
-    return regex.test(url) || customExpression.test(url);
+    return customExpression.test(url);
+  } else {
+    let regex = createMediumRegex(media);
+    return regex.test(url);
   }
-  return regex.test(url);
 }
 
 /**
@@ -53,11 +62,11 @@ function isMedium(url, options) {
  * @return {string}      Regex part (.art|p.rt|pa.t|par.)
  */
 function createRegexPart(part) {
-  var specialChars = ["/", "\\", "(", ")", "|", "?", "#", "$", "^", ">", "<", "*", "[", "]", "*"]; // place \ infront of these chars if they are present in part
-  var part_copy = "", regex = "", i;
+  let specialChars = ["/", "\\", "(", ")", "|", "?", "#", "$", "^", ">", "<", "*", "[", "]", "*"]; // place \ infront of these chars if they are present in part
+  let part_copy = "", regex = "", i;
 
   // words can be separated in different ways
-  part = part.split("-").join(".").split(" ").join(".").split("_").join(".");
+  part = part.replace(/[-\s_]/g, ".");
 
   // check for special characters
   for (i = 0; i < part.length; i++) {
@@ -67,7 +76,7 @@ function createRegexPart(part) {
     part_copy += part[i];
   }
 
-  // ignore parts which are to small like fb.com/ or vk.com/
+  // ignore parts which are too small like fb.com/ or vk.com/
   if (part.split(".").length === 2 && part.split(".")[0].length <= 3) {
     return part_copy;
   }
@@ -100,6 +109,18 @@ function createRegexPart(part) {
   return regex.slice(0, regex.length - 1); // remove | from end of string
 }
 
+function getProtocol(url) {
+  return url.match(/http:|https:/)[0];
+}
+
+function getDomain(url) {
+  return url.match(/(?:http:|https:)\/\/(?:w{3}\.|)([^\/]*)/)[1];
+}
+
+function getExtension(url) {
+  return url.match(/(?:http:|https:)\/\/(?:w{3}\.|)(?:[^\/]*)(?:[^\.]*)(.*)/)[1];
+}
+
 function Scanner(url) {
   if (!isValidURL(url)) {
     throw {
@@ -109,316 +130,141 @@ function Scanner(url) {
     };
   }
 
-  var mainURL = url;
+  const _mainURL = url;
 
-  var protocolRegex = /http:|https:/;
-  var domainRegex = /(?:http:|https:)\/\/(?:w{3}\.|)([^\/]*)/;
-  var extensionRegex = /(?:http:|https:)\/\/(?:w{3}\.|)(?:[^\/]*)(?:[^\.]*)(.*)/;
-  var rssRegex = /([^\/]\/(?=rss))/;
+  const _mainProtocol = getProtocol(_mainURL);
+  const _mainDomain = getDomain(_mainURL);
+  const _mainExtension = getExtension(_mainURL);
 
-  var mainProtocol = mainURL.match(protocolRegex)[0];
-  var mainDomain = mainURL.match(domainRegex)[1];
-  var mainExtension = mainURL.match(extensionRegex)[1];
+  const _defaultInterval = 250;
+  const _defaultMax = 100;
 
-  var defaultInterval = 250;
-  var defaultMax = 100;
+  let _useWindowClose = true;
+  let _mediaList = defaultMedia;
+  let _blockedURLs = [];
 
-  var mediaList = defaultMedia;
-  var useWindowClose = true;
-  var blockedURLs = [];
-
-  this.max = defaultMax;
-  this.interval = defaultInterval;
+  this.max = _defaultMax;
+  this.interval = _defaultInterval;
   this.skipExternalResources = false;
 
-  var _this = this;
-
-  var on = {
+  let _on = {
     /**
      * This function is called when an exception is thrown
-     * @param {Object} error Exception
+     * @return {Object} Exception
      */
-    error: function (error) {},
+    error: () => {},
     /**
      * This function is called when the scan is done
      * @param {string[]} all_media A list of all links to social media found
      * @param {Object[]} all_pages A list of all scanned pages with properties: key:string, url:string, found.media:string[], found.links:string[]
      */
-    done: function (all_media, all_pages) {},
+    done: () => {},
     /**
      * This function is called when the scan of a page is done
      * @param {Object} page Page Object
      * @param {string} page.key
      * @param {string} page.url
      * @param {Object} page.found
-     * @param {string[]} page.found.media,
+     * @param {string[]} page.found.media
      * @param {string[]} page.found.links
      */
-    pageDone: function (page) {},
+    pageDone: () => {},
     /**
      * This function is called at the start of the scan of a page
      * @param {Object} page Page Object
      * @param {string} page.key
      * @param {string} page.url
      * @param {Object} page.found
-     * @param {string[]} page.found.media,
+     * @param {string[]} page.found.media
      * @param {string[]} page.found.links
      * @param {Function} skip
      */
-    pageStart: function (page) {}
+    pageStart: () => {}
   };
 
   /**
    * Set events
    * @param  {string}   eventName Name of callback
    * @param  {Function} callback  Callback function
-   * @return {void}
    */
-  this.on = function (eventName, callback) {
+  this.on = (eventName, callback) => {
     if (typeof eventName !== "string") {
       throw {error: "Missing parameter: event"};
     }
     if (typeof callback !== "function") {
       throw {error: "Missing parameteer: callback"};
     }
-    on[eventName] = callback;
-
-    return _this;
+    _on[eventName] = callback;
   };
 
   /**
    * @return {string[]} List of prefixes for social media links
    */
-  this.getMedia = function () {
-    return mediaList;
-  }
+  this.getMedia = () => _mediaList;
 
   /**
    * @param {(string[]|string)} med List of media or a single medium to be added to the medium list
    */
-  this.addMedium = function (med) {
+  this.addMedium = (med) => {
     if (typeof med === "string") {
-      mediaList.push(med);
+      _mediaList.push(med);
     } else if (typeof med === "object") {
-      mediaList = mediaList.concat(med);
+      _mediaList = _mediaList.concat(med);
     }
-  }
+  };
 
   /**
    * @param {(string[]|string)} med List of media or a single medium to be removed from the medium list
    */
-  this.removeMedium = function (med) {
-    var temp = [];
-    var i;
+  this.removeMedium = (med) => {
+    let temp = [];
+    let i;
 
     if (typeof med === "string") {
-      for (i = 0; i < mediaList.length; i++) {
-        if (med !== mediaList[i]) {
-          temp.push(mediaList[i]);
+      for (i = 0; i < _mediaList.length; i++) {
+        if (med !== _mediaList[i]) {
+          temp.push(_mediaList[i]);
         }
       }
-      mediaList = temp;
+      _mediaList = temp;
     } else if (typeof med === "object") {
-      for (i = 0; i < mediaList.length; i++) {
-        if (med.indexOf(mediaList[i]) === -1) {
-          temp.push(mediaList[i]);
+      for (i = 0; i < _mediaList.length; i++) {
+        if (med.indexOf(_mediaList[i]) === -1) {
+          temp.push(_mediaList[i]);
         }
       }
-      mediaList = temp;
+      _mediaList = temp;
     }
-  }
+  };
 
   /**
    * Add URL to list of URLs which shouldn't be scanned
-   * @param  {string} url URL to block
+   * @param {string} url URL to block
    */
-  this.blockURL = function (url) {
-    blockedURLs.push(url);
-  }
-
-  /**
-   * Scan a single URL
-   * @param  {Object} page Page object with url property to scan
-   * @param  {Function} callback Callback function
-   * @param  {Object} options
-   * @param  {string[]} options.fetchExternalResource Array of external resources to fetch
-   * @param  {string[]} options.processExternalResources Array of external resources to process
-   * @param  {boolean}  options.skipExternalResources Skip external resources if true
-   * @param  {number} counter When JSDOM failes the function will try again.
-   *                          counter is used to keep track of how many times this function has been called for this url
-   *                          dont change the value of counter when calling from outside this function
-   * @return {void}
-   */
-  var scan = function (page, options, callback, counter) {
-    counter = counter || 0;
-    options = options || {};
-    var fetchExternalResources = options.fetchExternalResources || ["script"];
-    var processExternalResources = options.processExternalResources || ["script"];
-    var skipExternalResources = options.skipExternalResources || false;
-
-    page.found = page.found || {};
-    page.found.links = page.found.links || [];
-    page.found.media = page.found.media || [];
-    jsdom.env({
-      url: page.url,
-      scripts: ["http://code.jquery.com/jquery.js"],
-      features: {
-        FetchExternalResources: fetchExternalResources,
-        ProcessExternalResources: processExternalResources,
-        SkipExternalResources: skipExternalResources
-      },
-      done: function (err, window) {
-        if (err) {
-          if (err.code === "ENOTFOUND" && counter < 3) {
-            scan(page, options, callback, ++counter);
-            if (window && window.close) window.close();
-            return;
-          }
-
-          on.error({
-            message: "Error retrieving page",
-            page: page,
-            error: err
-          });
-          callback(page);
-          if (window && window.close) window.close();
-          return;
-        }
-        try {
-          var $ = window.jQuery;
-
-          $(window.document).ready(function () {
-            var values = []; // list of all values to check
-            $("[data-href]").each(function () {
-              var attr = $(this).attr("data-href");
-              if (typeof attr === "string" && values.indexOf(attr) === -1) {
-                values.push(attr);
-              }
-            });
-
-            $("a").each(function () {
-              var attr = $(this).attr("href");
-              if (typeof attr === "string" && values.indexOf(attr) === -1) {
-                values.push(attr);
-              }
-            });
-
-            callback(checkURLs(page, values));
-            if (window && window.close && useWindowClose) {
-              window.close();
-            }
-            return;
-          });
-        } catch (e) {
-          on.error({
-            message: "Error scanning page",
-            page: page,
-            error: e
-          });
-          callback(page);
-          if (window && window.close && useWindowClose) {
-              window.close();
-          }
-          return;
-        }
-      }
-    });
+  this.blockURL = (url) => {
+    _blockedURLs.push(url);
   };
 
-  /**
-   * Check list of urls for media links and links with same domain
-   * @param {Object}   page Page object
-   * @param {string[]} urls List of urls to check
-   * @return {Object}        New page object
-   */
-  var checkURLs = function (page, urls) {
-    page.found = page.found || {};
-    page.found.media = page.found.media || [];
-    page.found.links = page.found.links || [];
-
-    for (var i = 0; i < urls.length; i++) {
-      var link_domain, link_protocol, link_extension, link_url;
-      link_url = urls[i];
-
-      if (!link_url) { continue; }
-      link_url = link_url.trim();
-
-      if (link_url[link_url.length - 1] === "/") {
-        link_url = link_url.slice(0, link_url.length - 1);
-      }
-
-      if (page.found.media.indexOf(link_url) === -1 && isMedium(link_url, mediaList)) {
-        page.found.media.push(link_url);
-      } else {
-        // check if link links to another page of the same website
-        if (isValidURL(link_url)) {
-          link_protocol = link_url.match(protocolRegex)[0];
-          link_domain = link_url.match(domainRegex)[1];
-          link_extension = link_url.match(extensionRegex)[1];
-
-        // check if url is a path without a domain
-        } else if (!/.*\:.*/.test(link_url) && link_url[0] !== "#") {
-          link_protocol = mainProtocol;
-          link_domain = mainDomain;
-
-          if (link_url[0] !== "/") {
-            link_url = "/" + link_url;
-          }
-
-          link_url = link_protocol + "//" + link_domain + link_url;
-
-          link_extension = link_url.match(extensionRegex)[1];
-
-        } else {
-          link_domain = undefined;
-          link_protocol = undefined;
-          link_extension = undefined;
-        }
-
-        if (mainDomain === link_domain && page.found.links.indexOf(link_url) === -1 && page.found.links.indexOf(link_url) === -1) {
-          page.found.links.push(link_url);
-        }
-      }
-    }
-
-    return page;
-  };
-
-  var createPage = function (url, key) {
-    return {
-      url: url,
-      key: key,
-      found: { media: [], links: [] }
-    };
-  };
-
-  var isBlockedURL = function (url) {
-    regexResult = /(?:http:\/\/|https:\/\/).*(\/(.*))/.exec(url); // get path from link to check in blockedURLs
+  const isBlockedURL = (url) => {
+    const regexResult = /(?:http:\/\/|https:\/\/).*(\/(.*))/.exec(url); // get path from link to check in blockedURLs
 
     if (!regexResult) {
-      return blockedURLs.indexOf(url);
+      return _blockedURLs.indexOf(url);
     }
 
     return !(
-      blockedURLs.indexOf(url) === -1 &&
-      blockedURLs.indexOf(regexResult[1]) === -1 &&
-      blockedURLs.indexOf(regexResult[2]) === -1
+      _blockedURLs.indexOf(url) === -1 &&
+      _blockedURLs.indexOf(regexResult[1]) === -1 &&
+      _blockedURLs.indexOf(regexResult[2]) === -1
     );
-  }
-
-  /**
-   * @callback hasAcceptedContentCallback
-   * @param {string} url The checked URL
-   * @param {boolean} accepted True if content type is supported false otherwise
-   * @param {Object} error If accepted is false it could be because of an error which is represented in this object
-   */
+  };
 
   /**
    * jsdom crashes when it tries to load xml or other non excepted types
-   * @param {string} url URL to check
-   * @param {hasAcceptedContentCallback} callback Callback
+   * @param  {string}   url      URL to check
+   * @param  {Function} callback true if the response has content-type text/html, false otherwise
    */
-  this.hasAcceptedContent = function (url, callback) {
+  this.hasAcceptedContent = (url, callback) => {
     request.head(url, function (err, response, body) {
       if (err || response.statusCode !== 200) {
         return callback(url, false, err);
@@ -434,52 +280,60 @@ function Scanner(url) {
     });
   };
 
-  /**
-   * Start scanning
-   */
-  this.start = function () {
-    var page = createPage(mainURL, 1);
-    on.pageStart(page, function () {});
+  const getPageProperties = (page) => {
+    return {
+      url: page.url,
+      key: page.key,
+      found: page.found
+    };
+  };
 
-    var externalResourcesOptions = {};
-    if (_this.skipExternalResources) {
-      externalResourcesOptions.fetchExternalResources = [];
-      externalResourcesOptions.processExternalResources = [];
-      externalResourcesOptions.skipExternalResources = true;
+  this.start = () => {
+    const page = new Page(_mainURL, 1);
+
+    _on.pageStart(getPageProperties(page), () => {});
+
+    if (this.skipExternalResources) {
+      page.fetchExternalResources = [];
+      page.processExternalResources = [];
+      page.skipExternalResources = true;
     }
 
-    scan(page, externalResourcesOptions, function (page) {
-      on.pageDone(page);
+    page.scan(_mediaList, (err) => {
+      if (err) {
+        _on.error(Object.assign({}, err, { page: getPageProperties(page) }));
+        return;
+      }
+
       if (page.found.links.length === 0) {
-        on.done([page.found.media], [page]);
+        _on.done(page.found.media, [getPageProperties(page)]);
         return;
       }
 
       // list of all scanned pages
-      var pages = [page];
+      let pages = [getPageProperties(page)];
       // list of all found links
-      var links = [page.url]
+      let links = [page.url];
 
-      for (var i = 0; i < page.found.links.length; i++) {
-        if (!isBlockedURL(page.found.links[i])) {
-          links.push(page.found.links[i]);
+      for (let link of page.found.links) {
+        if (!isBlockedURL(link)) {
+          links.push(link);
         }
       }
 
       // keep track of all scanned and currently scanned links
-      var scannedLinks = {};
+      let scannedLinks = {};
       scannedLinks[page.url] = {done: true};
-      var lastKey = 1;
-      localblockedURLs = {};
-      var media = page.found.media || [];
+      let lastKey = 1;
+      let localBlockedURLs = {};
+      let media = page.found.media || [];
 
-      var currentlyScanning = 0; // amount of links currently being scanned
+      let currentlyScanning = 0; // amount of links currently being scanned
 
-      var i = 1; // entry URL is at index 0
+      let i = 1; // entry URL is at index 0
 
-      var doneScanning = function () {
-        var link;
-        for (link in scannedLinks) {
+      let doneScanning = () => {
+        for (let link in scannedLinks) {
           if (scannedLinks[link].done === false) {
             return false;
           }
@@ -487,18 +341,20 @@ function Scanner(url) {
         return true;
       };
 
-      var t;
-      var intervalFunction = function () {
-        var link = links[i];
-        if (currentlyScanning >= 100) {
+      let t;
+      const intervalFunction = () => {
+        let link = links[i];
+
+        if (currentlyScanning >= 10) {
           // wait with scanning other links
           clearInterval(t);
           return;
         }
-        if (Object.keys(scannedLinks).length >= _this.max) {
+
+        if (Object.keys(scannedLinks).length >= this.max) {
           clearInterval(t);
           if (doneScanning()) {
-            on.done(media, pages);
+            _on.done(media, pages);
           }
           return;
         }
@@ -520,7 +376,7 @@ function Scanner(url) {
         if (!link) {
           clearInterval(t);
           if (doneScanning()) {
-            on.done(media, pages);
+            _on.done(media, pages);
           } else {
             i = links.length; // check for a new link ones one of the other links is done scanning
           }
@@ -529,9 +385,9 @@ function Scanner(url) {
 
         i++;
 
-        if (localblockedURLs[link]) {
-          for (var j = 0; j < links.length; j++) {
-            if (!scannedLinks[links[j]] && !localblockedURLs[links[j]]) {
+        if (localBlockedURLs[link]) {
+          for (let j = 0; j < links.length; j++) {
+            if (!scannedLinks[links[j]] && !localBlockedURLs[links[j]]) {
               link = links[j];
               i = j + 1;
             }
@@ -540,94 +396,229 @@ function Scanner(url) {
 
         scannedLinks[link] = { done: false };
         // jsdom only accepts resources which contain HTML and crashes on other resources like XML
-        _this.hasAcceptedContent(link, function (link, accepted, error) {
+        this.hasAcceptedContent(link, (link, accepted, error) => {
           if (!accepted || error) {
             delete scannedLinks[link]; // make room for another link
-            localblockedURLs[link] = true;
+            localBlockedURLs[link] = true;
             return;
           }
 
-          var page = createPage(link, ++lastKey + "");
+          let page = new Page(link, ++lastKey);
 
-          var skip = false;
-          var skipURL = function () {
+          let skip = false;
+          const skipURL = () => {
             skip = true;
-          }
+          };
 
-          on.pageStart(page, skipURL);
+          _on.pageStart(page, skipURL);
 
           if (skip) {
             delete scannedLinks[link];
-            localblockedURLs[link] = true;
+            localBlockedURLs[link] = true;
             return;
           }
 
           currentlyScanning++;
 
-          var externalResourcesOptions = {};
-          if (_this.skipExternalResources) {
-            externalResourcesOptions.fetchExternalResources = [];
-            externalResourcesOptions.processExternalResources = [];
-            externalResourcesOptions.skipExternalResources = true;
+          if (this.skipExternalResources) {
+            page.fetchExternalResources = [];
+            page.processExternalResources = [];
+            page.skipExternalResources = true;
           }
 
-          scan(page, externalResourcesOptions, function (page) {
-            var j;
-            for (j = 0; j < page.found.media.length; j++) {
-              if (media.indexOf(page.found.media[j]) === -1) {
-                media.push(page.found.media[j]);
+          page.scan(_mediaList, (err) => {
+            if (err) {
+              _on.error(Object.assign({}, err, { page: getPageProperties(page) }));
+            }
+
+            for (let medium of page.found.media) {
+              if (media.indexOf(medium) === -1) {
+                media.push(medium);
               }
             }
 
-            var link;
-            for (j = 0; j < page.found.links.length; j++) {
-              link = page.found.links[j];
-
+            for (let link of page.found.links) {
               if (links.indexOf(link) === -1 && !isBlockedURL(link)) {
-                links.push(page.found.links[j]);
+                links.push(link);
               }
             }
-            on.pageDone(page);
-            pages.push(page);
+
+            _on.pageDone(getPageProperties(page));
+            pages.push(getPageProperties(page));
 
             scannedLinks[page.url].done = true;
             currentlyScanning--;
 
-            var linkAmount = Object.keys(scannedLinks).length;
+            let linkAmount = Object.keys(scannedLinks).length;
 
-            if (linkAmount >= _this.max && doneScanning()) {
+            if (linkAmount >= this.max && doneScanning()) {
               clearInterval(t);
-              on.done(media, pages);
+              _on.done(media, pages);
             } else if (t === undefined) {
-              t = setInterval(intervalFunction, _this.interval);
+              t = setInterval(intervalFunction, this.interval);
             } else if (doneScanning()) {
-              on.done(media, pages);
+              _on.done(media, pages);
             }
           });
         });
       };
 
-      t = setInterval(intervalFunction, _this.interval);
-
+      t = setInterval(intervalFunction, this.interval);
     });
-
   };
 }
 
-/**
-* Create a scanner
-* @param  {string} url The starting URL of the website to scan
-* @return {Scanner}
-*/
-function scan (url) {
-  return new Scanner(url);
+function Page(url, key) {
+  this.url = url;
+  this.key = key;
+
+  this.found = { media: [], links: [] };
+
+  let _counter = 0;
+
+  const _pageExtension = getExtension(url);
+  const _pageDomain = getDomain(url);
+  const _pageProtocol = getProtocol(url);
+
+  this.fetchExternalResources = ["script"];
+  this.processExternalResources = ["script"];
+  this.skipExternalResources = false;
+
+  /**
+  * Check list of urls for media links and links with same domain
+  * @param {string[]} urls List of urls to check
+  * @param {string[]} mediaList List of media to compare urls with
+  * @return {Object}        New page object
+  */
+  const checkURLs = (urls, mediaList) => {
+    this.found = this.found || {};
+    this.found.media = this.found.media || [];
+    this.found.links = this.found.links || [];
+
+    for (let linkURL of urls) {
+      let linkDomain, linkProtocol, linkExtension;
+
+      if (!linkURL) { continue; }
+      linkURL = linkURL.trim();
+
+      if (linkURL[linkURL.length - 1] === "/") {
+        linkURL = linkURL.slice(0, linkURL.length - 1);
+      }
+
+      if (this.found.media.indexOf(linkURL) === -1 && isMedium(linkURL, mediaList)) {
+        this.found.media.push(linkURL);
+      } else {
+        // check if link links to another page of the same website
+        if (isValidURL(linkURL)) {
+          linkProtocol = getProtocol(linkURL);
+          linkDomain = getDomain(linkURL);
+          linkExtension = getExtension(linkURL);
+
+          // check if url is a path without a domain
+        } else if (!/.*\:.*/.test(linkURL) && linkURL[0] !== "#") {
+          linkProtocol = _pageProtocol;
+          linkDomain = _pageDomain;
+
+          if (linkURL[0] !== "/") {
+            linkURL = "/" + linkURL;
+          }
+
+          linkURL = linkProtocol + "//" + linkDomain + linkURL;
+
+          linkExtension = getExtension(linkURL);
+
+        } else {
+          linkDomain = undefined;
+          linkProtocol = undefined;
+          linkExtension = undefined;
+        }
+
+        if (
+          _pageDomain === linkDomain &&
+          this.found.links.indexOf(linkURL) === -1 &&
+          this.found.links.indexOf(linkURL) === -1
+        ) {
+          this.found.links.push(linkURL);
+        }
+      }
+    }
+  };
+
+  /**
+   * scan page for media and other URLs
+   * @param  {string[]} mediaList List of media to scan for
+   * @param  {Function} callback  Callback function with error as first parameter
+   */
+  const scan = (mediaList, callback) => {
+    jsdom.env({
+      url: this.url,
+      scripts: ["http://code.jquery.com/jquery.js"],
+      features: {
+        FetchExternalResources: this.fetchExternalResources,
+        ProcessExternalResources: this.processExternalResources,
+        SkipExternalResources: this.skipExternalResources
+      },
+      done: function (err, window) {
+        if (err) {
+          if (err.code === "ENOTFOUND" && _counter < 3) {
+            this.scan(callback, ++_counter);
+            if (window && window.close) window.close();
+            return;
+          }
+
+          callback({
+            message: "Error retrieving page",
+            error: err
+          });
+
+          if (window && window.close) window.close();
+          return;
+        }
+        try {
+          const $ = window.jQuery;
+
+          $(window.document).ready(function () {
+            let values = []; // list of all values to check
+
+            $("[data-href]").each(function () {
+              const attr = $(this).attr("data-href");
+              if (typeof attr === "string" && values.indexOf(attr) === -1) {
+                values.push(attr);
+              }
+            });
+
+            $("a").each(function () {
+              const attr = $(this).attr("href");
+              if (typeof attr === "string" && values.indexOf(attr) === -1) {
+                values.push(attr);
+              }
+            });
+
+            checkURLs(values, mediaList);
+            callback(undefined);
+
+            if (window && window.close) {
+              window.close();
+            }
+            return;
+          });
+        } catch (e) {
+          callback({
+            message: "Error scanning page",
+            error: e
+          });
+
+          if (window && window.close) {
+            window.close();
+          }
+          return;
+        }
+      }
+    });
+  };
+  this.scan = scan;
 }
 
-/**
-* Social media scanner
-*/
-var SocialMediaScanner = {
-  scan: scan
+module.exports = {
+  scan: (url) => new Scanner(url)
 };
-
-module.exports = SocialMediaScanner;
