@@ -520,10 +520,11 @@ function Scanner(url) {
           var page = createPage(link, ++lastKey + "");
 
           var skip = false;
-
-          on.pageStart(page, function () {
+          var skipURL = function () {
             skip = true;
-          });
+          }
+
+          on.pageStart(page, skipURL);
 
           if (skip) {
             delete scannedLinks[link];
