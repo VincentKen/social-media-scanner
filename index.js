@@ -125,6 +125,7 @@ function Scanner(url) {
 
   var mediaList = defaultMedia;
   var useWindowClose = true;
+  var blockedURLs = [];
 
   this.max = defaultMax;
   this.interval = defaultInterval;
@@ -225,6 +226,14 @@ function Scanner(url) {
       }
       mediaList = temp;
     }
+  }
+
+  /**
+   * Add URL to list of URLs which shouldn't be scanned
+   * @param  {string} url URL to block
+   */
+  this.blockURL = function (url) {
+    blockedURLs.push(url);
   }
 
   /**
@@ -383,6 +392,20 @@ function Scanner(url) {
     };
   };
 
+  var isBlockedURL = function (url) {
+    regexResult = /(?:http:\/\/|https:\/\/).*(\/(.*))/.exec(url); // get path from link to check in blockedURLs
+
+    if (!regexResult) {
+      return blockedURLs.indexOf(url);
+    }
+
+    return !(
+      blockedURLs.indexOf(url) === -1 &&
+      blockedURLs.indexOf(regexResult[1]) === -1 &&
+      blockedURLs.indexOf(regexResult[2]) === -1
+    );
+  }
+
   /**
    * @callback hasAcceptedContentCallback
    * @param {string} url The checked URL
@@ -435,12 +458,19 @@ function Scanner(url) {
       // list of all scanned pages
       var pages = [page];
       // list of all found links
-      var links = [page.url].concat(page.found.links);
+      var links = [page.url]
+
+      for (var i = 0; i < page.found.links.length; i++) {
+        if (!isBlockedURL(page.found.links[i])) {
+          links.push(page.found.links[i]);
+        }
+      }
+
       // keep track of all scanned and currently scanned links
       var scannedLinks = {};
       scannedLinks[page.url] = {done: true};
       var lastKey = 1;
-      blockedLinks = {};
+      localblockedURLs = {};
       var media = page.found.media || [];
 
       var currentlyScanning = 0; // amount of links currently being scanned
@@ -499,9 +529,9 @@ function Scanner(url) {
 
         i++;
 
-        if (blockedLinks[link]) {
+        if (localblockedURLs[link]) {
           for (var j = 0; j < links.length; j++) {
-            if (!scannedLinks[links[j]] && !blockedLinks[links[j]]) {
+            if (!scannedLinks[links[j]] && !localblockedURLs[links[j]]) {
               link = links[j];
               i = j + 1;
             }
@@ -513,7 +543,7 @@ function Scanner(url) {
         _this.hasAcceptedContent(link, function (link, accepted, error) {
           if (!accepted || error) {
             delete scannedLinks[link]; // make room for another link
-            blockedLinks[link] = true;
+            localblockedURLs[link] = true;
             return;
           }
 
@@ -528,7 +558,7 @@ function Scanner(url) {
 
           if (skip) {
             delete scannedLinks[link];
-            blockedLinks[link] = true;
+            localblockedURLs[link] = true;
             return;
           }
 
@@ -549,8 +579,11 @@ function Scanner(url) {
               }
             }
 
+            var link;
             for (j = 0; j < page.found.links.length; j++) {
-              if (links.indexOf(page.found.links[j]) === -1) {
+              link = page.found.links[j];
+
+              if (links.indexOf(link) === -1 && !isBlockedURL(link)) {
                 links.push(page.found.links[j]);
               }
             }
