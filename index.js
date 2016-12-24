@@ -162,6 +162,7 @@ function Scanner(url) {
      * @param {Object} page.found
      * @param {string[]} page.found.media,
      * @param {string[]} page.found.links
+     * @param {Function} skip
      */
     pageStart: function (page) {}
   };
@@ -415,7 +416,7 @@ function Scanner(url) {
    */
   this.start = function () {
     var page = createPage(mainURL, 1);
-    on.pageStart(page);
+    on.pageStart(page, function () {});
 
     var externalResourcesOptions = {};
     if (_this.skipExternalResources) {
@@ -517,8 +518,20 @@ function Scanner(url) {
           }
 
           var page = createPage(link, ++lastKey + "");
+
+          var skip = false;
+
+          on.pageStart(page, function () {
+            skip = true;
+          });
+
+          if (skip) {
+            delete scannedLinks[link];
+            blockedLinks[link] = true;
+            return;
+          }
+
           currentlyScanning++;
-          on.pageStart(page);
 
           var externalResourcesOptions = {};
           if (_this.skipExternalResources) {
