@@ -45,15 +45,21 @@ site1.on("error", function (err) {});
 
 #### pageStart
 This event is called at the start of a scan of a page.  
-The callback for this event has one page object parameter.  
+The callback for this event has a page object parameter and a skip method.  
 The page object has the following properties:
  - `url`: The url of the page which just started scanning
  - `key`: A unique key for this page
  - `found`: an object with a list of all found links (`links: string[]`) and a list of all found media(`media: string[]`).
 page.found.media and page.found.links are just empty arrays at the start of the scan
 
+When the skip method is called the page won't be scanned
+
 ```javascript
-site1.on("pageStart", function (page) {
+site1.on("pageStart", function (page, skip) {
+  if (page.url === "http://example.com/example") {
+    skip();
+    return;
+  }
   console.log("Started scanning: " + page.url);
 });
 ```
@@ -110,6 +116,7 @@ site1.on("pageStart", function (page) {
 - `getMedia()`: Returns a list of media to check for
 - `addMedium(med: string[]|string)`: Add one medium or a list of media to the list of media which will be used to check urls
 - `removeMedium(med: string[]|string)`: Remove one medium or a list of media from the list of media which will be used to check urls
+- `blockURL(url: string)`: The URL passed to this method won't be scanned
 
 ### Starting the scan
 After everything is setup you can start the scan with:
