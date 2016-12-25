@@ -32,31 +32,6 @@ function createMediumRegex(media) {
 }
 
 /**
- * Check if url is a link to social media
- * @param  {string}   url                      URL to check
- * @param  {Object}   options                  Options object
- * @param  {string[]} options.media            List of social media prefixes (["facebook.com/", "twitter.com/"])
- * @param  {RegExp}   options.customExpression Check if URL is a medium using this customExpression
- * @return {Boolean}
- */
-function isMedium(url, options) {
-  let regexString = "/*.(";
-  options = options || {};
-  let media = options.media || defaultMedia;
-  let customExpression = options.customExpression;
-
-  if (customExpression) {
-    if (typeof customExpression === "string") {
-      customExpression = new RegExp(customExpression);
-    }
-    return customExpression.test(url);
-  } else {
-    let regex = createMediumRegex(media);
-    return regex.test(url);
-  }
-}
-
-/**
  * Create variations of part for regex (example|.xample|e.ample)
  * @param  {string} part Create regex part from this part
  * @return {string}      Regex part (.art|p.rt|pa.t|par.)
@@ -474,8 +449,6 @@ function Page(url, key) {
 
   this.found = { media: [], links: [] };
 
-  let _counter = 0;
-
   const _pageExtension = getExtension(url);
   const _pageDomain = getDomain(url);
   const _pageProtocol = getProtocol(url);
@@ -495,6 +468,8 @@ function Page(url, key) {
     this.found.media = this.found.media || [];
     this.found.links = this.found.links || [];
 
+    const regex = createMediumRegex(mediaList);
+
     for (let linkURL of urls) {
       let linkDomain, linkProtocol, linkExtension;
 
@@ -505,7 +480,7 @@ function Page(url, key) {
         linkURL = linkURL.slice(0, linkURL.length - 1);
       }
 
-      if (this.found.media.indexOf(linkURL) === -1 && isMedium(linkURL, mediaList)) {
+      if (this.found.media.indexOf(linkURL) === -1 && regex.test(linkURL)) {
         this.found.media.push(linkURL);
       } else {
         // check if link links to another page of the same website
@@ -544,6 +519,10 @@ function Page(url, key) {
     }
   };
 
+  let _counter = 0;
+
+  this.resetCounter = () => _counter = 0;
+
   /**
    * scan page for media and other URLs
    * @param  {string[]} mediaList List of media to scan for
@@ -560,6 +539,7 @@ function Page(url, key) {
       },
       done: function (err, window) {
         if (err) {
+          // try loading page 3 times before returning an error
           if (err.code === "ENOTFOUND" && _counter < 3) {
             this.scan(callback, ++_counter);
             if (window && window.close) window.close();
