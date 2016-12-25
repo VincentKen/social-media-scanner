@@ -18,7 +18,7 @@ function isValidURL(url) {
  * @param  {string[]} media list of social media prefixes
  * @return {RegExp}       Regular expression with social media
  */
-function createMediumRegex(media) {
+function createMediaRegex(media) {
   let regexString = "/*(";
 
   for (let medium of media) {
@@ -114,7 +114,6 @@ function Scanner(url) {
   const _defaultInterval = 250;
   const _defaultMax = 100;
 
-  let _useWindowClose = true;
   let _mediaList = defaultMedia;
   let _blockedURLs = [];
 
@@ -167,7 +166,7 @@ function Scanner(url) {
       throw {error: "Missing parameter: event"};
     }
     if (typeof callback !== "function") {
-      throw {error: "Missing parameteer: callback"};
+      throw {error: "Missing parameter: callback"};
     }
     _on[eventName] = callback;
   };
@@ -213,13 +212,18 @@ function Scanner(url) {
   };
 
   /**
-   * Add URL to list of URLs which shouldn't be scanned
+   * Blocked URLs won't be scanned
    * @param {string} url URL to block
    */
   this.blockURL = (url) => {
     _blockedURLs.push(url);
   };
 
+  /**
+   * Check if url is present in _blockedURLs
+   * @param  {string}  url URL
+   * @return {Boolean}     true if _blockedURLs contains url
+   */
   const isBlockedURL = (url) => {
     const regexResult = /(?:http:\/\/|https:\/\/).*(\/(.*))/.exec(url); // get path from link to check in blockedURLs
 
@@ -255,6 +259,11 @@ function Scanner(url) {
     });
   };
 
+  /**
+   * Retrieve properties from an instance of Page
+   * @param  {Object} page instance of Page
+   * @return {Object}      url, key and found properties of page
+   */
   const getPageProperties = (page) => {
     return {
       url: page.url,
@@ -263,9 +272,13 @@ function Scanner(url) {
     };
   };
 
+  /**
+   * Start scanning website
+   */
   this.start = () => {
     const page = new Page(_mainURL, 1);
 
+    // the first scan can't be skipped, give empty function
     _on.pageStart(getPageProperties(page), () => {});
 
     if (this.skipExternalResources) {
@@ -280,6 +293,7 @@ function Scanner(url) {
         return;
       }
 
+      // if there are no other links to scan then the scan is already over
       if (page.found.links.length === 0) {
         _on.done(page.found.media, [getPageProperties(page)]);
         return;
@@ -320,8 +334,8 @@ function Scanner(url) {
       const intervalFunction = () => {
         let link = links[i];
 
-        if (currentlyScanning >= 10) {
-          // wait with scanning other links
+        if (currentlyScanning >= 100) {
+          // wait before scanning other links
           clearInterval(t);
           return;
         }
@@ -468,7 +482,7 @@ function Page(url, key) {
     this.found.media = this.found.media || [];
     this.found.links = this.found.links || [];
 
-    const regex = createMediumRegex(mediaList);
+    const regex = createMediaRegex(mediaList);
 
     for (let linkURL of urls) {
       let linkDomain, linkProtocol, linkExtension;
